@@ -58,7 +58,8 @@ def process_data(path_from, path_to):
         for character in os.listdir(alphabet_path):
             letter_path = os.path.join(alphabet_path, character)
             for rendering in os.listdir(letter_path):
-                y.append((alphabet, character))
+                drawer = rendering.split('_')[1].split('.')[0]
+                y.append((alphabet, character, drawer))
                 image = imread(
                             os.path.join(letter_path, rendering)
                     )
