@@ -144,3 +144,93 @@ class BatchSampler:
                     (self.y.iloc[test_inds],
                      self.y.iloc[train_inds])
         )
+
+
+class OneShotGenerator:
+    """
+    A class that generates one-shot tasks.  It does this in two
+    ways.
+    - Caches a number of one-shot tasks and cycles through these.
+      this is the default mode.
+    - Randomly generates a one-shot task.  This is the mode that
+      should be used on test data, but is a little slow for the
+      purposes of model evaluation during training.
+    Also, the default is an 10-way one-shot task, because this
+    will be used on the training data, which has some alphabets
+    which have a small number of characters (I think 11 or 12 is
+    the smallest).  All alphabets in the test set have at least
+    20 characters, so 20-way evaluation here is fine.
+        We could also default to 20-way and if an alphabet only
+    has m < 20 characters, then we fall back on an m-way challenge.
+    This might actually be better.
+    """
+    def __init__(self, X, y, mode='cached', n_way=20, cache_size=320):
+        self.X = X
+        self.y_n_pd = y
+        self.y = pd.DataFrame(
+                        data=y,
+                        columns=['Alphabet', 'Character', 'Drawer']
+                    )
+        self.mode = mode
+        self.n_way = n_way
+        self.cache_size = cache_size
+        self.cache = {}
+        self.form_cache()
+
+        self.n = y.shape[0]
+        self.current_task_number = 0
+
+    def form_one_shot(self):
+        """
+        Although this could also be a class that subclasses this.
+        """
+        alphabet = np.random.choice(self.y.Alphabet.unique())
+        # make sure that the number of tasks that we don't attempt
+        # to generate an n-way task when the alphabet is too small.
+        n = min(
+                self.n_way,
+                self.y.Character[
+                    self.y.Alphabet == alphabet
+                ].unique().shape[0]
+            )
+
+        drawers = np.random.choice(
+                        self.y.Drawer.unique(),
+                        2, replace=False
+                    )
+        characters = np.random.choice(
+                        self.y[
+                            self.y.Alphabet == alphabet
+                        ].Character.unique(),
+                        n, replace=False
+                    )
+
+        test_inds = self.y[
+                        (self.y.Alphabet == alphabet) &
+                        (self.y.Drawer == drawers[0]) &
+                        np.isin(self.y.Character, characters)
+                    ].index.values
+
+        train_inds = self.y[
+                        (self.y.Alphabet == alphabet) &
+                        (self.y.Drawer == drawers[1]) &
+                        np.isin(self.y.Character, characters)
+                    ].index.values
+        return (
+                    (test_inds, train_inds),
+                    (self.y.iloc[test_inds],
+                     self.y.iloc[train_inds])
+        )
+
+    def form_cache(self):
+        for i in range(self.cache_size):
+            self.cache[i] = self.form_one_shot()
+
+    def generate_one_shot(self):
+        if self.mode == 'cached':
+            current_one_shot = self.cache[self.current_task_number]
+            self.current_task_number = (
+                    (1 + self.current_task_number) % self.cache_size
+                )
+            return current_one_shot
+        return self.form_one_shot()
