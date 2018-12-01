@@ -107,8 +107,8 @@ class BatchSampler:
         if self.current_batch == 0:
             self.current_efactor = (1 + self.current_efactor) % (2 * self.E)
         return (
-                (self.X[X_b_inds[:, 0], :],
-                 self.X[X_b_inds[:, 1], :]),
+                [self.X[X_b_inds[:, 0], :],
+                 self.X[X_b_inds[:, 1], :]],
                 np.array(y_b)
             )
 
