@@ -44,7 +44,7 @@ parser.add_argument(
 parser.add_argument(
             "--max_iter",
             help="Max number of iterations to run the bayesian optimization.",
-            default=20
+            default=30
     )
 args = parser.parse_args()
 MODELS_DIR = args.path
@@ -169,16 +169,21 @@ def train_siamese_net(siamese_net, epochs):
 
 # Define parameter search space
 bds = [
-    {'name': 'dropout_conv', 'type': 'continuous', 'domain': (0, 1)},
-    {'name': 'dropout_fc', 'type': 'continuous', 'domain': (0, 1)},
-    {'name': 'learning_rate', 'type': 'continuous', 'domain': (10e-5, 10e-3)},
-    {'name': 'epochs', 'type': 'discrete', 'domain': (50, 200)}
+    {'name': 'dropout_conv', 'type': 'continuous', 'domain': (0, 0.5)},
+    {'name': 'dropout_fc', 'type': 'continuous', 'domain': (0, 0.5)},
+    {'name': 'learning_rate', 'type': 'continuous', 'domain': (1e-6, 1e-2)},
+    {'name': 'epochs', 'type': 'continuous', 'domain': (50, 201)}
 ]
 
 # Define optimization objective (make sure to save the model)
 def trained_val_score(parameters):
     parameters = parameters[0]
-    print("The current parameters are: ", parameters)
+    print("The current parameters are: ", 
+                    str(np.around(parameters[0], decimals=6)) + ' ',
+                    str(np.around(parameters[1], decimals=6)) + ' ',
+                    str(np.around(parameters[2], decimals=6)) + ' ',
+                    str(int(parameters[3]))
+            )
     siamese_net = build_siamese_net(
                             parameters[0],
                             parameters[1],
@@ -186,10 +191,10 @@ def trained_val_score(parameters):
                     )
     score = train_siamese_net(siamese_net, int(parameters[3]))
     SAVE_PATH = MODELS_DIR + '/model' + '_' + \
-                str(parameters[0]) + '_' + \
-                str(parameters[1]) + '_' + \
-                str(parameters[2]) + '_' + \
-                str(parameters[3]) + '_' + \
+                str(np.around(parameters[0], decimals=6)) + '_' + \
+                str(np.around(parameters[1], decimals=6)) + '_' + \
+                str(np.around(parameters[2], decimals=6)) + '_' + \
+                str(int(parameters[3])) + '_' + \
                 'score_' + str(score) + '.h5'
     siamese_net.save(SAVE_PATH)
     K.clear_session()
@@ -199,6 +204,7 @@ optimizer = BayesianOptimization(
                 f=trained_val_score,
                 domain=bds,
                 model_type='GP',
+                initial_design_numdata=10,
                 acquisition_type='EI',
                 maximize=True
     )
