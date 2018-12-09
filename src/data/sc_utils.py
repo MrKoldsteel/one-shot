@@ -351,7 +351,8 @@ def edge_from_image_Jitendra(image, n_pts=100, oversampling_rate=3, ddepth=cv.CV
     not_finished = True
     while not_finished:
         # Select a close pair of points
-        m, _ = np.argwhere(dists == dists.min()).shape
+        m = np.argwhere(dists == dists.min()).shape[0]
+        # m, _ = np.argwhere(dists == dists.min()).shape
         i, j = np.argwhere(dists == dists.min())[np.random.choice(m)]
 
         # add to the edges set and angles set
