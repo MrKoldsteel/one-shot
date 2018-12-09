@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 
 
 class BatchSampler:
@@ -175,7 +176,7 @@ class OneShotGenerator:
         self.n_way = n_way
         self.cache_size = cache_size
         self.cache = {}
-        self.form_cache()
+        # self.form_cache()
 
         self.n = y.shape[0]
         self.current_task_number = 0
@@ -217,7 +218,7 @@ class OneShotGenerator:
                         np.isin(self.y.Character, characters)
                     ].index.values
         return (
-                    (test_inds, train_inds),
+                    (self.X[test_inds], self.X[train_inds]),
                     (self.y.iloc[test_inds],
                      self.y.iloc[train_inds])
         )
@@ -228,9 +229,166 @@ class OneShotGenerator:
 
     def generate_one_shot(self):
         if self.mode == 'cached':
-            current_one_shot = self.cache[self.current_task_number]
+            if self.current_task_number not in self.cache:
+                current_one_shot = self.form_one_shot()
+                self.cache[self.current_task_number] = current_one_shot
+            else:
+                current_one_shot = self.cache[self.current_task_number]
             self.current_task_number = (
                     (1 + self.current_task_number) % self.cache_size
-                )
+                    )
             return current_one_shot
         return self.form_one_shot()
+
+
+class BatchingForMatching:
+
+    def __init__(self, X, y, mode='cache', cache_size=20,
+                       batch_size=32, n_way=20):
+        self.X = X
+        self.c = pd.DataFrame(
+                        data=[ch[0] + '_' + ch[1] for ch in y],
+                        columns=['Character']
+                    )
+        self.unique_characters = np.random.permutation(
+                                    self.c.Character.unique())
+        self.num_uc = self.unique_characters.shape[0]
+        self.batch_num = 0 # keep track of current batch number
+        self.curr_cache = 0 # and current position in the cache dict
+        self.y = pd.DataFrame(
+                        data=y,
+                        columns=['Alphabet', 'Character', 'Drawer']
+                    )
+        self.mode = mode
+        self.n_way = n_way
+        self.cache_size = cache_size
+        self.batch_size = batch_size
+        self.cache = {}
+        # self.form_cache()
+
+        self.n = X.shape[0]
+        self.current_task_number = 0
+
+    def get_one_shot_indices(self, ch): #,  y=y_train_pd, c=characters, bs=32):
+        """
+        inputs a character and generates a one-shot task for it
+        by selecting two random drawers and 19 other characters
+        to form a one-shot task around.  This is all done in terms
+        of indices.  We can then use this to store a large number
+        of one-shot tasks for each character.
+        """
+        tst_inds, trn_inds = [], []
+        for _ in range(self.batch_size):
+            rnd_dr = np.random.choice(self.y.Drawer.unique(),
+                                  2, replace=False)
+            rnd_ch = np.random.choice(
+                    self.c.Character[self.c.Character != ch].unique(),
+                    19, replace=False)
+            rnd_ch = np.append(ch, rnd_ch)
+            c_trn_inds = self.y[(self.c.Character.isin(rnd_ch)) &
+                       (self.y.Drawer == rnd_dr[0])].index.values
+            c_tst_inds = self.y[(self.c.Character == ch) &
+                       (self.y.Drawer == rnd_dr[1])].index.values
+            cls = np.argmax(
+                self.c.Character.iloc[c_trn_inds].isin([ch]).values
+                )
+            tst_inds.append((c_tst_inds[0], cls))
+            trn_inds.append(c_trn_inds)
+            # print(y.iloc[c_tst_inds])
+            # print(y.iloc[c_trn_inds[0]])
+        return np.array(tst_inds), np.array(trn_inds)
+
+    def form_cache(self):
+        for ch in self.unique_characters:
+            self.cache[ch] = []
+            for _ in range(self.cache_size):
+                self.cache[ch].append(self.get_one_shot_indices(ch))
+
+    def generate_batch(self):
+        """
+        This is more or less giving what we wanted.  Now, the thing
+        to do is to adjust the output so that it is putting out the
+        torch tensors that we want for training...  So we need to
+        form these from what is currently out, and then output them
+        instead.  Cool beans.
+        """
+        if self.unique_characters[self.batch_num] not in self.cache:
+            self.cache[
+                    self.unique_characters[self.batch_num]
+                ] = []
+            self.cache[
+                    self.unique_characters[self.batch_num]
+                ].append(self.get_one_shot_indices(
+                             self.unique_characters[self.batch_num]
+                                       ))
+        elif len(self.cache[self.unique_characters[self.batch_num]]) < self.cache_size:
+            self.cache[
+                    self.unique_characters[self.batch_num]
+                ].append(self.get_one_shot_indices(
+                             self.unique_characters[self.batch_num]
+                                       ))
+        out = self.cache[
+                    self.unique_characters[self.batch_num]
+                ][self.curr_cache]
+        self.batch_num = (1 + self.batch_num) % self.num_uc
+        if self.batch_num == 0:
+            self.curr_cache = (1 + self.curr_cache) % self.cache_size
+
+        tst_inds, trn_inds = out
+
+        # Construct torch tensors for target images and classes
+        target_ims = torch.tensor(self.X[tst_inds[:, 0]])
+        target_classes = torch.tensor(tst_inds[:, 1])
+        # target_classes = np.zeros((self.batch_size, self.n_way))
+        # target_classes[np.arange(self.batch_size), tst_inds[:, 1]] = 1
+        # target_classes = torch.tensor(target_classes, dtype=torch.int32)
+
+        # Construct torch tensors for support set images and classes
+        support_set_ims = torch.stack(
+                [torch.tensor(self.X[trn_inds[i, :]]) for i in range(self.batch_size)]
+            )
+        support_set_classes = torch.stack(
+                [torch.eye(self.n_way) for i in range(self.batch_size)]
+            )
+        return target_ims, target_classes, support_set_ims, support_set_classes
+
+
+def concat_images(X):
+    """Concatenates a bnch of images into a big matrix for plotting purposes."""
+    nc,h,w,_ = X.shape
+    X = X.reshape(nc,h,w)
+    n = np.ceil(np.sqrt(nc)).astype("int8")
+    img = np.zeros((n*w,n*h))
+    x = 0
+    y = 0
+    for example in range(nc):
+        img[x*w:(x+1)*w,y*h:(y+1)*h] = X[example]
+        y += 1
+        if y >= n:
+            y = 0
+            x += 1
+    return img, n
+
+def plot_oneshot_task(pairs):
+    """Takes a one-shot task given to a siamese net and  """
+    fig, (ax1, ax2) = plt.subplots(1,2, figsize=(14, 12))
+    fig.set_facecolor('white')
+    ax1.set_title("Test Images")
+    ax2.set_title("Support Set")
+    #ax1.matshow(pairs[0][0].reshape(105,105),cmap='gray')
+    img1, n = concat_images(pairs[0])
+    ax1.matshow(img1,cmap='gray')
+    img2, n = concat_images(pairs[1])
+    ax2.matshow(img2,cmap='gray')
+    plt.xticks(np.arange(0,105*n,105))
+    plt.yticks(np.arange(0,105*n,105))
+    ax1.get_yaxis().set_visible(False)
+    ax1.get_xaxis().set_visible(False)
+    ax2.get_yaxis().set_visible(False)
+    ax2.get_xaxis().set_visible(False)
+    ax2.set_xticklabels([])
+    ax2.set_yticklabels([])
+    ax1.set_ylim(bottom=420, top=0)
+    ax2.set_ylim(bottom=420, top=0)
+    # ax2.grid(linewidth=1,linestyle='-',color='black')
+    plt.show()
