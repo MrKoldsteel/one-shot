@@ -117,17 +117,36 @@ class OmniglotDataset(Dataset):
     Create a class to take advantage of the pytorch dataloader.
     """
 
-    def __init__(self, root_dir, cache, augment=True, transform=transform):
+    def __init__(self, root_dir, cache_size, neg_per_pos,
+                 mode='trn', augment=True, transform=transform):
         self.info = find_omniglot_info(root_dir)
-        self.cache = cache
+        self.cache_size = cache_size
+        self.cache = {}
+        self.npp = neg_per_pos
+        self.mode = mode
         self.augment = augment
         self.transform = transform
 
     def __len__(self):
-        return len(self.cache)
+        return self.cache_size
+
+    def cache_out(self, idx):
+        if idx in self.cache:
+            return self.cache[idx]
+        pos = np.random.binomial(1, 1 / self.npp)
+        if pos and self.cache:
+            idy = np.random.choice(list(self.cache.keys()))
+            pos1, pos2 = form_pos_pair(self.info,
+                                       self.cache[idy][0],
+                                       mode=self.mode)
+            self.cache[idx] = [pos1, pos2]
+            return [pos1, pos2]
+        neg1, neg2 = form_neg_pair(self.info, mode=self.mode)
+        self.cache[idx] = [neg1, neg2]
+        return [neg1, neg2]
 
     def __getitem__(self, idx):
-        id1, id2 = self.cache[idx]
+        id1, id2 = self.cache_out(idx)
         img1_name = self.info.File.iloc[id1]
         img2_name = self.info.File.iloc[id2]
         image1 = Image.open(img1_name)
