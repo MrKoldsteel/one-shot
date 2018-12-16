@@ -112,7 +112,7 @@ def form_siamese_cache(info, cache_size=120000, neg_per_pos=5, mode='trn'):
     return cache
 
 
-class OmniglotDataset(Dataset):
+class SiameseOmniglotDataset(Dataset):
     """
     Create a class to take advantage of the pytorch dataloader.
     """
@@ -160,6 +160,66 @@ class OmniglotDataset(Dataset):
         X2 = 1 - np.array(image2, dtype=int)
         y = int(self.info.Cls[id1] == self.info.Cls[id2])
         return X1, X2, y
+
+
+# Implement similar utilities for Matching networks.
+# The following class generates and caches indices of one-shot tasks
+# When called.
+class Cacher:
+    def __init__(self, n_way=20, info=info, mode='trn'):
+        self.n_way = n_way
+        self.mode = mode
+        self.info = info[info.Mode == self.mode]
+        self.cache = {}
+    def cache_out(self, i):
+        if i not in self.cache:
+            self.cache[i] = self.get_more_cache()
+        return self.cache[i]
+    def get_more_cache(self):
+        drawers = np.random.choice(self.info.Drawer.unique(), 2, replace=False)
+        share_char = np.random.choice(self.info.Char.unique(), 1)
+        test_id, ss1_id = self.info[self.info.Drawer.isin(drawers) &
+                                   self.info.Char.isin(share_char)].sample(2).index.values
+        ss_ids = self.info[~self.info.index.isin([test_id, ss1_id])].sample(self.n_way - 1).index.values
+        ss_ids = np.append(ss_ids, ss1_id)
+        np.random.shuffle(ss_ids)
+        return (test_id, np.argmax(ss1_id == ss_ids), ss_ids)
+
+
+class MatchingOmniglotDataset(Dataset):  # This is very specific to Matching nets, maybe name it for this
+    """
+    Reimagining of the original that functions on one sampler so that issues
+    don't crop up with multicore processing of things.
+    """
+    def __init__(self, root_dir, n_way=20, cache_size=10000,
+                 transform=transform, mode='trn'):
+        self.n_way = n_way
+        self.cache_size = cache_size
+        self.info = find_info(root_dir)
+        self.transform = transform
+        self.mode = mode
+        self.cache = Cacher(n_way=self.n_way, info=self.info, mode=self.mode)
+
+    def __len__(self):
+        return self.cache_size
+
+    def __getitem__(self, idx):
+        test_id, test_cls, ss_ids = self.cache.cache_out(idx)
+        test_im = Image.open(self.info.File.iloc[test_id])
+        if self.transform:
+            test_im = self.transform(test_im)
+        test_im = np.array(test_im, dtype=np.float32)
+        im_dim = test_im.shape[0]
+        test_im = test_im.reshape(1, im_dim, im_dim)
+
+        ss_ims = []
+        for ss_id in ss_ids:
+            ss_im = Image.open(self.info.File.iloc[ss_id])
+            if self.transform:
+                ss_im = self.transform(ss_im)
+            ss_ims.append(np.array(ss_im, dtype=np.float32))
+        ss_ims = np.stack(ss_ims).reshape(self.n_way, 1, im_dim, im_dim)
+        return test_im, test_cls, ss_ims, np.eye(self.n_way, dtype=np.float32)
 
 
 # Maybe the best place to form cache is outside of the Siamese
