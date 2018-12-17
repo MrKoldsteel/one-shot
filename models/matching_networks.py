@@ -131,7 +131,7 @@ def get_preds(target_ims, support_set_ims, support_set_classes, model):
 # can also vary this up within epochs
 class NwayScheduler:
     def __init__(self, epoch_ranges=np.array([[0, 10], [10, 20], [20, 30], [30, 40], [40, np.inf]]),
-                       n_way_bounds=np.array([[5,  6], [5,   6], [5,  6], [5, 7],  [6, 9]])):
+                       n_way_bounds=np.array([[5,  10], [8,   15], [12,  18], [15, 20],  [20, 21]])):
         self.ers = epoch_ranges
         self.nws = n_way_bounds
         self.n = len(self.nws)
