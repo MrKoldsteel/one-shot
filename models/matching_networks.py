@@ -94,8 +94,12 @@ def get_preds(target_ims, support_set_ims, support_set_classes, model):
             target_embedding.reshape(n_b, 1, d_embedding).repeat([1, n_ss, 1]),
             support_set_embeddings
         )  #.t()
-    softmax_sims = softmax(similarities).unsqueeze(1)  #.t()).unsqueeze(1)
-    return softmax_sims.bmm(support_set_classes).squeeze()
+    # This may have been why it wasn't training properly: CrossEntropyLoss
+    # takes scores! As does BCE... This may have been why the problems on
+    # colab as well.
+    # softmax_sims = softmax(similarities).unsqueeze(1)  #.t()).unsqueeze(1)
+    # return softmax_sims.bmm(support_set_classes).squeeze()
+    return similarities.unsqueeze(1).bmm(support_set_classes).squeeze()
 
 
 # A utility to check the accuracy of method during training.
@@ -126,8 +130,8 @@ def get_preds(target_ims, support_set_ims, support_set_classes, model):
 # big).  We train the model to learn on progressively harder n-way tasks. we
 # can also vary this up within epochs
 class NwayScheduler:
-    def __init__(self, epoch_ranges=np.array([[0, 20], [20, 40], [60, np.inf]]),
-                       n_way_bounds=np.array([[2,  8], [5,  15], [10,     30]])):
+    def __init__(self, epoch_ranges=np.array([[0, 10], [10, 20], [20, 30], [30, 40], [40, np.inf]]),
+                       n_way_bounds=np.array([[5,  6], [5,   6], [5,  6], [5, 7],  [6, 9]])):
         self.ers = epoch_ranges
         self.nws = n_way_bounds
         self.n = len(self.nws)
