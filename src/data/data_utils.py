@@ -219,7 +219,8 @@ class OneShotGenerator:
                         np.isin(self.y.Character, characters)
                     ].index.values
         return (
-                    (self.X[test_inds], self.X[train_inds]),
+                    (test_inds, train_inds),
+                    #(self.X[test_inds], self.X[train_inds]),
                     (self.y.iloc[test_inds],
                      self.y.iloc[train_inds])
         )
