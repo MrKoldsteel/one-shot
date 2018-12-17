@@ -166,7 +166,7 @@ class SiameseOmniglotDataset(Dataset):
 # The following class generates and caches indices of one-shot tasks
 # When called.
 class Cacher:
-    def __init__(self, n_way=20, info=info, mode='trn'):
+    def __init__(self, info, n_way=20, mode='trn'):
         self.n_way = n_way
         self.mode = mode
         self.info = info[info.Mode == self.mode]
@@ -191,14 +191,14 @@ class MatchingOmniglotDataset(Dataset):  # This is very specific to Matching net
     Reimagining of the original that functions on one sampler so that issues
     don't crop up with multicore processing of things.
     """
-    def __init__(self, root_dir, n_way=20, cache_size=10000,
+    def __init__(self, info, n_way=20, cache_size=20000,
                  transform=transform, mode='trn'):
         self.n_way = n_way
         self.cache_size = cache_size
-        self.info = find_info(root_dir)
+        self.info = info
         self.transform = transform
         self.mode = mode
-        self.cache = Cacher(n_way=self.n_way, info=self.info, mode=self.mode)
+        self.cache = Cacher(info=self.info, n_way=self.n_way, mode=self.mode)
 
     def __len__(self):
         return self.cache_size
